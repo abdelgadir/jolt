@@ -20,6 +20,7 @@ import com.bazaarvoice.jolt.common.Optional;
 import com.bazaarvoice.jolt.common.tree.WalkedPath;
 
 import java.util.Map;
+import java.util.stream.Stream;
 
 @SuppressWarnings( "deprecated" )
 public class FunctionEvaluator {
@@ -43,6 +44,18 @@ public class FunctionEvaluator {
         this.functionArgs = functionArgs;
     }
 
+    private Optional<Object> applyFunction(Function f, Map<String, Object> context,
+        Object... args) {
+
+        if (f instanceof ContextAwareFunction) {
+            //append the context to the varargs
+            Object[] newArgs = Stream.concat(args == null ? Stream.empty() : Stream.of(args),
+                Stream.of(context)).toArray(Object[]::new);
+            return f.apply(newArgs);
+        } else {
+            return args == null ? f.apply() : f.apply(args);
+        }
+    }
 
     public Optional<Object> evaluate(Optional<Object> inputOptional, WalkedPath walkedPath, Map<String, Object> context) {
 
@@ -58,7 +71,8 @@ public class FunctionEvaluator {
             // pass the value, if present, to the spec function
             else if( functionArgs.length == 1 ) {
                 Optional<Object> evaluatedArgValue = functionArgs[0].evaluateArg( walkedPath, context );
-                valueOptional = evaluatedArgValue.isPresent() ? function.apply( evaluatedArgValue.get() ): function.apply( );
+                valueOptional = evaluatedArgValue.isPresent() ? applyFunction(function, context,
+                    evaluatedArgValue.get()) : applyFunction(function, context);
             }
             // "key": "=abs(@(1,&0),-1,-3)"
             // this is more complicated case! if args is an array, after evaluation we cannot pass a missing value wrapped in
@@ -66,7 +80,7 @@ public class FunctionEvaluator {
             // upto the implementer to interpret the value. Ideally we can almost always pass a list straight from input.
             else if( functionArgs.length > 1 ) {
                 Object[] evaluatedArgs = evaluateArgsValue( functionArgs, context, walkedPath );
-                valueOptional = function.apply( evaluatedArgs );
+                valueOptional = applyFunction(function, context, evaluatedArgs);
             }
             //
             // FYI this is where the "magic" happens that allows functions that take a single method
@@ -76,7 +90,8 @@ public class FunctionEvaluator {
             // "key": "=abs"
             else {
                 // pass current value as arg if present
-                valueOptional = inputOptional.isPresent() ? function.apply( inputOptional.get()) : function.apply(  );
+                valueOptional = inputOptional.isPresent() ? applyFunction(function, context,
+                    inputOptional.get()) : applyFunction(function, context);
             }
         }
         catch(Exception ignored) {}
